@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 pose_model/*
+*.save*
 
 # C extensions
 *.so
