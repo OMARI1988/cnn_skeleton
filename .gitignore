@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+pose_model/*
 
 # C extensions
 *.so
