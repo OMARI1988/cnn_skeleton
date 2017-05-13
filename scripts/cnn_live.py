@@ -21,7 +21,7 @@ class live_cnn():
         sk_topic = rospy.get_param("~skeleton","/skeleton_data/incremental")		# subscribed to openni skeleton topic
         self.sk_cnn = cnn_live_functions.skeleton_cnn(cam, im_topic, dp_topic, sk_topic, pub, save)
         counter = 0
-        r = rospy.Rate(30) # 30hz
+        r = rospy.Rate(15) # 30hz
         while not rospy.is_shutdown():
             if self.sk_cnn.image_ready and self.sk_cnn.depth_ready and self.sk_cnn.openni_ready:
                 counter = 0
@@ -36,7 +36,7 @@ class live_cnn():
                                 self.sk_cnn._process_images(img, depth, img_xy, userID)
                 self.sk_cnn._publish()
             else:
-                if self.sk_cnn.image_ready and counter>10:
+                if self.sk_cnn.image_ready and counter>45:
                     self.sk_cnn._publish()
                 counter += 1
                 r.sleep()

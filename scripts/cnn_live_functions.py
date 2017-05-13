@@ -67,11 +67,12 @@ class skeleton_cnn():
         self.bridge = CvBridge()
         self.rospack = rospkg.RosPack()
         self.cnn_path = self.rospack.get_path('cnn_skeleton')
-        self.limbs_names = ['head','neck', 'right_shoulder', 'right_elbow', 'right_hand', 'left_shoulder', 'left_elbow', 'left_hand',
-            'right_hip', 'right_knee', 'right_foot', 'left_hip', 'left_knee', 'left_foot']
+        self.limbs_names = ['r_ankle', 'r_knee','r_hip', 'l_hip', 'l_knee', 'l_ankle', 'pelvis','thorax','upper_neck',
+                                        'head_top','r_wrist', 'r_elbow','r_shoulder', 'l_shoulder','l_elbow','l_wrist']
+        self.bone_con = [[9,8], [12,11], [11,10], [13,14], [14,15], [2,1], [1,0], [3,4], [4,5]]
         self.colors = [[0, 0, 255], [0, 170, 255], [0, 255, 170], [0, 255, 0], [170, 255, 0],
         [255, 170, 0], [255, 0, 0], [255, 0, 170], [170, 0, 255]] # note BGR ...
-        self.stickwidth = 6
+        self.stickwidth = 12
         self.dist_threshold = 1.5       # less than 1.5 meters ignore the skeleton
         self.depth_thresh = .35         # any more different in depth than this with openni, use openni
         self.finished_processing = 0    # a flag to indicate that we finished processing allavailable  data
@@ -87,6 +88,8 @@ class skeleton_cnn():
         self.saver = tf.train.Saver()
         self.teaser_batch = np.zeros([8, 256, 256,3], dtype = np.float32)
         self.img_small = np.zeros((256,256,3),dtype=np.uint8)
+        self.conf_threshold = 0.5		# threshold for cnn detection
+        self.conf_threshold2 = 0.1
         self._initiliase_cnn()
         self.processing = 0
         self.image_ready = 0
@@ -141,6 +144,7 @@ class skeleton_cnn():
     def _get_openni_state(self,msg):
         #print msg
         self.openni_to_delete[msg.userID] = msg.message
+        print msg.userID,msg.message
         #if msg.message in ["Out of Scene","Stopped tracking"]:
         #    print 'yay'
         #    self.openni_to_delete.append(msg.userID)
@@ -182,34 +186,44 @@ class skeleton_cnn():
         self.image_ready = 0
         self.depth_ready = 0
         self.openni_ready = 0
-        #self.scale1 = 256/(img.shape[0])
-        #self.scale2 = 256/(img.shape[1])
-        #print self.scale1,self.scale2
+
         # main loop
         start = time.time()
 
         self.img_small = cv2.resize(img, (256,256))#, fx=self.scale1, fy=self.scale2, interpolation=cv2.INTER_CUBIC)
-        #center = [img.shape[0]/2.0, img.shape[1]/2.0]
-        #self.img_small,_ = self.crop(img, img.shape[0], center)
-        #print np.max(self.img_small),np.min(self.img_small)
         self.teaser_batch[0] = np.divide(self.img_small,255.0)
-        #print self.teaser_batch[2]
         output = self.sess.run(self.preds, feed_dict={self.X:self.teaser_batch})
-        a,b = self.get_skeleton(output[0])
-        #print a
-        #print b
+        a,conf = self.get_skeleton(output[0])
+
         X = a[0]*img.shape[1]/256.0
         Y = a[1]*img.shape[0]/256.0
         X = map(int,X)
         Y = map(int,Y)
-        #conf = b
-        #print X
-        #print Y
-        #print '---------'
+
         # block 10
         canvas = img.copy()
-        for x,y in zip(X,Y):
-            cv2.circle(canvas,(x,y), 5, (0,0,255), -1)
+        # check conf
+        C_val = np.sum(conf)/float(len(conf))
+
+        if C_val >= self.conf_threshold:
+            canvas = np.multiply(canvas,0.2,casting="unsafe")
+            cur_canvas = img.copy() #np.zeros(canvas.shape,dtype=np.uint8)
+            for l,bone in enumerate(self.bone_con):
+                a = bone[0]
+                b = bone[1]
+                if conf[a] >= self.conf_threshold2 and conf[b] >= self.conf_threshold2:
+	            Yb = [X[a],X[b]]
+	            Xb = [Y[a],Y[b]]
+	            mX = np.mean(Xb)
+	            mY = np.mean(Yb)
+	            length = ((Xb[0] - Xb[1]) ** 2 + (Yb[0] - Yb[1]) ** 2) ** 0.5
+	            angle = math.degrees(math.atan2(Xb[0] - Xb[1], Yb[0] - Yb[1]))
+	            polygon = cv2.ellipse2Poly((int(mY),int(mX)), (int(length/2), self.stickwidth), int(angle), 0, 360, 1)
+	            cv2.fillConvexPoly(cur_canvas, polygon, self.colors[l])
+            canvas = np.add(canvas,np.multiply(cur_canvas,0.8,casting="unsafe"),casting="unsafe") # for transparency
+            #for x,y,c in zip(X,Y,conf):
+            #    if c >= self.conf_threshold:
+            #        cv2.circle(canvas,(x,y), 5, (0,0,255), -1)
 
         canvas = canvas.astype(np.uint8)
         x_min, x_max, y_min, y_max = img_xy
@@ -223,7 +237,7 @@ class skeleton_cnn():
         self.image[y_min:y_max, x_min:x_min+2, :] = self.colors[userID]
         self.image.setflags(write=1)
         self.image[y_min:y_max, x_max-2:x_max, :] = self.colors[userID]
-        print 'image processed in: %1.3f sec' % (time.time()-start)
+        #print 'image processed in: %1.3f sec' % (time.time()-start)
         #util.showBGRimage(name+'_results',canvas,1)
 
     def _publish(self):
@@ -268,7 +282,7 @@ class skeleton_cnn():
             #self.openni_data[userID][jname] = 
 
     def get_skeleton(self, preds):
-        print preds.shape
+        #print preds.shape
         preds_rewarped = np.ones((3, 16), dtype=np.float32)
         confidence = np.zeros((16), dtype=np.float32)
         for part in range(0, 16):
