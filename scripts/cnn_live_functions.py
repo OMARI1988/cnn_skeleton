@@ -2,15 +2,17 @@
 # author  Muhannad Alomari
 # email   scmara@leeds.ac.uk
 # version 1.0
-
 import rospy
 import cv2
 import numpy as np
 import scipy
 import math
-import caffe
+#import caffe
+import tensorflow as tf
+from network import inception
+
 import time
-from config_reader import config_reader
+#from config_reader import config_reader
 import util
 import copy
 import rospkg
@@ -20,22 +22,23 @@ import getpass
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 from std_msgs.msg import String, Header
-from cpm_skeleton.msg import cpm_pointer, cpmAction, cpmActionResult
+#from cpm_skeleton.msg import cpm_pointer, cpmAction, cpmActionResult
 import sys
 import actionlib
 import shutil
+import skimage.io as io
 
-class skeleton_cpm():
-    """docstring for cpm"""
+class skeleton_cnn():
+    """docstring for cnn"""
     def __init__(self,cam,topic,pub,sav):
         
         # read camera calib
         self.camera_calib = util.read_yaml_calib(cam)
 
-        # save cpm images
-        self.save_cpm_img = sav
-        if self.save_cpm_img:
-            rospy.loginfo("save cpm images.") 
+        # save cnn images
+        self.save_cnn_img = sav
+        if self.save_cnn_img:
+            rospy.loginfo("save cnn images.") 
 
         # get camera topic
         self.image_topic = rospy.resolve_name(topic)
@@ -43,19 +46,19 @@ class skeleton_cpm():
         # initialize published
         self.pub = pub
         if self.pub:
-            rospy.loginfo("publish cpm images")
-            self.image_pub = rospy.Publisher("/cpm_skeleton_image", Image, queue_size=1)
+            rospy.loginfo("publish cnn images")
+            self.image_pub = rospy.Publisher("/cnn_skeleton_image", Image, queue_size=1)
         else:
-            rospy.loginfo("don't publish cpm images")
+            rospy.loginfo("don't publish cnn images")
         
         # cpm init stuff
         self.bridge = CvBridge()
         self.rospack = rospkg.RosPack()
-        self.cpm_path = self.rospack.get_path('cpm_skeleton')
-        self.conf = 1            	# using config file 1, for the full body detector
-        self.param, self.model = config_reader(self.conf)
-        self.boxsize = self.model['boxsize']
-        self.npart = self.model['np']
+        self.cnn_path = self.rospack.get_path('cnn_skeleton')
+        #self.conf = 1            	# using config file 1, for the full body detector
+        #self.param, self.model = config_reader(self.conf)
+        #self.boxsize = self.model['boxsize']
+        #self.npart = self.model['np']
         self.limbs_names = ['head','neck', 'right_shoulder', 'right_elbow', 'right_hand', 'left_shoulder', 'left_elbow', 'left_hand',
             'right_hip', 'right_knee', 'right_foot', 'left_hip', 'left_knee', 'left_foot']
         self.colors = [[0, 0, 255], [0, 170, 255], [0, 255, 170], [0, 255, 0], [170, 255, 0],
@@ -65,23 +68,37 @@ class skeleton_cpm():
         self.depth_thresh = .35     	# any more different in depth than this with openni, use openni
         self.finished_processing = 0   	# a flag to indicate that we finished processing allavailable  data
         self.threshold = 10		# remove any folder <= 10 detections
-        self._initiliase_cpm()
+        self.sess = tf.Session()
+        self.X = tf.placeholder(tf.float32, shape=None)
+        self.logits = inception(self.X,False)
+        self.preds = tf.nn.sigmoid(self.logits)
+        self.saver = tf.train.Saver()
+        self.teaser_batch = np.zeros([8, 256, 256,3], dtype = np.float32)
+
+        self._initiliase_cnn()
         self.processing = 0
         self.image_ready = 0
 
         # subscribe to camera topic
         rospy.Subscriber(self.image_topic, Image, self.detect_and_draw)
 
-    def _initiliase_cpm(self):
-        sys.stdout = open(os.devnull,"w")
-        if self.param['use_gpu']:
-            caffe.set_mode_gpu()
-        else:
-            caffe.set_mode_cpu()
-        caffe.set_device(self.param['GPUdeviceNumber']) # set to your device!
-        self.person_net = caffe.Net(self.model['deployFile_person'], self.model['caffemodel_person'], caffe.TEST)
-        self.pose_net = caffe.Net(self.model['deployFile'], self.model['caffemodel'], caffe.TEST)
-        sys.stdout = sys.__stdout__
+    def _initiliase_cnn(self):
+        rospack = rospkg.RosPack()
+        path = rospack.get_path('cnn_skeleton')
+        teaser_images_folder = path+'/teaser_images/'
+        network_path = path + '/pose_model/pose_net.chkp'
+        self.saver.restore(self.sess, network_path)
+        print('Initializing and running on teaser batch')
+        for t in range(1,7):
+            path = teaser_images_folder + 'teaser' + str(t) + '.jpg'
+            self.teaser_batch[t] = np.divide(np.array(io.imread(path)),255.0)
+        #output = self.sess.run(self.preds, feed_dict={self.X: self.teaser_batch})
+        print('initialization done')
+        
+        #caffe.set_device(self.param['GPUdeviceNumber']) # set to your device!
+        #self.person_net = caffe.Net(self.model['deployFile_person'], self.model['caffemodel_person'], caffe.TEST)
+        #self.pose_net = caffe.Net(self.model['deployFile'], self.model['caffemodel'], caffe.TEST)
+        #sys.stdout = sys.__stdout__
 
     def detect_and_draw(self,imgmsg):
         if not self.processing:
