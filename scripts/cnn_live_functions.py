@@ -40,6 +40,7 @@ class skeleton_cnn():
 
         # save cpm images
         self.frame = 0
+        self.person_found = 0
         self.save_img = save
         self.save_dir     = save_dir 
         if self.save_img:
@@ -201,6 +202,8 @@ class skeleton_cnn():
             Y = map(int, a[1]*img.shape[0]/256.0)
 
             # block 10
+            x_min, x_max, y_min, y_max = img_xy
+            img = self.image[y_min:y_max, x_min:x_max, :]
             canvas = img.copy()
             # check conf
             C_val = np.sum(conf)/float(len(conf))
@@ -224,7 +227,6 @@ class skeleton_cnn():
                 canvas = np.add(canvas,np.multiply(cur_canvas,0.8,casting="unsafe"),casting="unsafe") # for transparency
             
             canvas = canvas.astype(np.uint8)
-            x_min, x_max, y_min, y_max = img_xy
             colourID = np.mod(userID, len(self.colors))
             self.image.setflags(write=1)
             self.image[y_min:y_max, x_min:x_max, :] = canvas
@@ -245,17 +247,13 @@ class skeleton_cnn():
             msg = self.bridge.cv2_to_imgmsg(self.image, "rgb8")
             sys.stdout = sys.__stdout__
             self.image_pub.publish(msg)
-            if self.save_img:
+            if self.save_img and self.person_found:
                cv2.imwrite(self.save_dir+str(self.frame)+".jpg", cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB))
                self.frame+=1
         self.processing = 0
 
     def _get_openni_msg(self, X, Y, img_xy, userID):
-        #[fx,fy,cx,cy] = self.camera_calib
         x_min, x_max, y_min, y_max = img_xy
-        #print X
-        #print Y
-        #print self.openni_data[userID]["ros_msg"]
         msg = self.openni_data[userID]["ros_msg"]
         for j,joint in enumerate(msg.joints):
             #print j,joint.name
@@ -272,7 +270,6 @@ class skeleton_cnn():
 
             x_cnn = (x2d-self.cx)*z/self.fx
             y_cnn = (y2d-self.cy)*z/self.fy
-
 
             #if joint.name == "head":
             #    print '>>>',X[val],Y[val],x_min,y_min,x,y,z,self.cx,self.cy,self.fx,self.fy

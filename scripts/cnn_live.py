@@ -24,7 +24,7 @@ class live_cnn():
         counter = 0
         r = rospy.Rate(15) # 30hz
         while not rospy.is_shutdown():
-            imgs, depths, img_xys, userIDs = [],[],[],[]					# inputs to parallel processing cnn
+            imgs, depths, img_xys, userIDs, self.sk_cnn.person_found = [],[],[],[],0	# inputs to parallel processing cnn
             if self.sk_cnn.image_ready and self.sk_cnn.depth_ready and self.sk_cnn.openni_ready:
                 users = self.sk_cnn.openni_data.keys()
                 for userID in users:
@@ -39,8 +39,9 @@ class live_cnn():
                                 depths.append(self.sk_cnn.openni_data[userID]["process_depth"])
                                 img_xys.append(self.sk_cnn.openni_data[userID]["img_xy"])
                                 userIDs.append(userID)
+                                self.sk_cnn.person_found = 1
             
-            if imgs != []:									# any data for processing?
+            if self.sk_cnn.person_found:							# any data for processing?
                 self.sk_cnn._process_images(imgs, depths, img_xys, userIDs)			# process data
                 self.sk_cnn._publish()								# publish results
             else:
