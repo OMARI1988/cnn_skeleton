@@ -23,21 +23,25 @@ class live_cnn():
         counter = 0
         r = rospy.Rate(15) # 30hz
         while not rospy.is_shutdown():
+            imgs, depths, img_xys, userIDs = [],[],[],[]					# inputs to parallel processing cnn
             if self.sk_cnn.image_ready and self.sk_cnn.depth_ready and self.sk_cnn.openni_ready:
-                counter = 0
-                users = self.sk_cnn.openni_to_delete.keys()
+                users = self.sk_cnn.openni_data.keys()
                 for userID in users:
-                    if userID in self.sk_cnn.openni_to_delete and userID in self.sk_cnn.openni_data:
-                        self.sk_cnn.openni_to_delete[userID]["cnt"] += 1
-                        if self.sk_cnn.openni_to_delete[userID]["cnt"] == 30:			# no update to this ID for two seconds
-                            self.sk_cnn.openni_to_delete[userID]["msg"] = "Stopped tracking"
-                        if self.sk_cnn.openni_to_delete[userID]["msg"] not in ["Out of Scene","Stopped tracking"]:
+                    #if userID in self.sk_cnn.openni_to_delete and userID in self.sk_cnn.openni_data:
+                        self.sk_cnn.openni_data[userID]["cnt"] += 1			# counter to make sure this user is still there
+                        if self.sk_cnn.openni_data[userID]["cnt"] == 30:			# no update to this ID for two seconds
+                            self.sk_cnn.openni_data[userID]["msg"] = "Stopped tracking"
+                        if self.sk_cnn.openni_data[userID]["msg"] not in ["Out of Scene","Stopped tracking"]:
                             if "img_xy" in self.sk_cnn.openni_data[userID].keys():
-                                img    = self.sk_cnn.openni_data[userID]["process_img"]
-                                depth  = self.sk_cnn.openni_data[userID]["process_depth"]
-                                img_xy = self.sk_cnn.openni_data[userID]["img_xy"]
-                                self.sk_cnn._process_images(img, depth, img_xy, userID)
-                self.sk_cnn._publish()
+                                counter = 0
+                                imgs.append(self.sk_cnn.openni_data[userID]["process_img"])
+                                depths.append(self.sk_cnn.openni_data[userID]["process_depth"])
+                                img_xys.append(self.sk_cnn.openni_data[userID]["img_xy"])
+                                userIDs.append(userID)
+            
+            if imgs != []:									# any data for processing?
+                self.sk_cnn._process_images(imgs, depths, img_xys, userIDs)			# process data
+                self.sk_cnn._publish()								# publish results
             else:
                 if self.sk_cnn.image_ready and counter>45:
                     self.sk_cnn._publish()

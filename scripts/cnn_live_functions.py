@@ -36,6 +36,7 @@ class skeleton_cnn():
         
         # read camera calib
         self.camera_calib = util.read_yaml_calib(cam)
+        self.fx, self.fy, self.cx, self.cy = self.camera_calib
 
         # save cpm images
         # TO DO!
@@ -56,9 +57,9 @@ class skeleton_cnn():
         self.pub = pub
         if self.pub:
             rospy.loginfo("publish cnn images")
-            self.image_pub = rospy.Publisher("/cnn_skeleton_image", Image, queue_size=1)
+            self.image_pub = rospy.Publisher("/cnn_skeleton_image", Image, queue_size=5)
             rospy.loginfo("publish cnn skeletons")
-            self.skeleton_pub = rospy.Publisher("/skeleton_data/cnn", skeleton_message, queue_size=1)
+            self.skeleton_pub = rospy.Publisher("/skeleton_data/cnn", skeleton_message, queue_size=5)
         else:
             rospy.loginfo("don't publish cnn images")
             rospy.loginfo("don't publish cnn skeletons")
@@ -69,6 +70,8 @@ class skeleton_cnn():
         self.cnn_path = self.rospack.get_path('cnn_skeleton')
         self.limbs_names = ['r_ankle', 'r_knee','r_hip', 'l_hip', 'l_knee', 'l_ankle', 'pelvis','thorax','upper_neck',
                                         'head_top','r_wrist', 'r_elbow','r_shoulder', 'l_shoulder','l_elbow','l_wrist']
+        self.ni_names = ['head','neck', 'torso', 'right_shoulder', 'right_elbow', 'right_hand', 'left_shoulder', 'left_elbow', 'left_hand', 'right_hip', 'right_knee', 'right_foot', 'left_hip', 'left_knee', 'left_foot']
+        self.ni_names_map = [9, 8, 6, 12, 11, 10, 13, 14, 15, 2, 1, 0, 5, 4, 3]
         self.bone_con = [[9,8], [12,11], [11,10], [13,14], [14,15], [2,1], [1,0], [3,4], [4,5]]
         self.colors = [[0, 0, 255], [0, 170, 255], [0, 255, 170], [0, 255, 0], [170, 255, 0],
         [255, 170, 0], [255, 0, 0], [255, 0, 170], [170, 0, 255]] # note BGR ...
@@ -77,11 +80,7 @@ class skeleton_cnn():
         self.depth_thresh = .35         # any more different in depth than this with openni, use openni
         self.finished_processing = 0    # a flag to indicate that we finished processing allavailable  data
         self.threshold = 10             # remove any folder <= 10 detections
-        #gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.333)
-        #config = tf.ConfigProto()
-        #config.gpu_options.allow_growth = True
         self.sess = tf.Session()
-        #self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
         self.X = tf.placeholder(tf.float32, shape=None)
         self.logits = inception(self.X,False)
         self.preds = tf.nn.sigmoid(self.logits)
@@ -96,17 +95,17 @@ class skeleton_cnn():
         self.depth_ready = 0
         self.openni_ready = 0
         self.openni_data = {}		# keeps track of openni_data
-        self.openni_to_delete = {}
+        #self.openni_to_delete = {}
         for user in range(20):
-            self.openni_to_delete[user] = {}
-            self.openni_to_delete[user]["msg"] = "Out of Scene"
-            self.openni_to_delete[user]["cnt"] = 0
+            self.openni_data[user] = {}
+            self.openni_data[user]["msg"] = "Out of Scene"
+            self.openni_data[user]["cnt"] = 0
 
         # subscribe to camera topic
         rospy.Subscriber(self.image_topic, Image, self._get_rgb)
 
         # subscribe to depth topic
-        rospy.Subscriber(self.depth_topic, Image, self._get_depth)
+        #rospy.Subscriber(self.depth_topic, Image, self._get_depth)
 
 	# subscribe to openni state
         rospy.Subscriber("/skeleton_data/state", skeleton_tracker_state, self._get_openni_state)
@@ -120,7 +119,7 @@ class skeleton_cnn():
         teaser_images_folder = path+'/teaser_images/'
         network_path = path + '/pose_model/pose_net.chkp'
         self.saver.restore(self.sess, network_path)
-        print('Initializing and running on teaser batch')
+        print('Initializing and running on uselss batch')
         for t in range(1,7):
             path = teaser_images_folder + 'teaser' + str(t) + '.jpg'
             self.teaser_batch[t] = np.divide(np.array(io.imread(path)),255.0)
@@ -135,35 +134,35 @@ class skeleton_cnn():
         if not self.processing:
             img = self.bridge.imgmsg_to_cv2(imgmsg, desired_encoding="passthrough")
             img = img[:,:,0:3]
-            #cv2.imshow('camera feed',img)
-            #cv2.waitKey(1)
             self.image = img
+            self.depth = 1       ## remove if using depth
             self.image_ready = 1
-
+            self.depth_ready = 1 ## remove if using depth
+ 
     def _get_depth(self,imgmsg):
         if not self.processing:
             self.depth = self.bridge.imgmsg_to_cv2(imgmsg, desired_encoding="passthrough")
             self.depth_ready = 1
 
     def _get_openni_state(self,msg):
-        self.openni_to_delete[msg.userID]["msg"] = msg.message
-        self.openni_to_delete[msg.userID]["cnt"] = 0
+        msg.userID = np.mod(msg.userID, 20)
+        self.openni_data[msg.userID]["msg"] = msg.message
+        self.openni_data[msg.userID]["cnt"] = 0
         print msg.userID,msg.message
 
     def _get_openni(self,msg):
-        self.openni_to_delete[msg.userID]["cnt"] = 0
+        msg.userID = np.mod(msg.userID, 20)
+        self.openni_data[msg.userID]["cnt"] = 0
         if not self.processing:
-            [fx,fy,cx,cy] = self.camera_calib
-            self.openni_data[msg.userID] = {}
-            self.openni_data[msg.userID]["uuid"] = msg.uuid
+            self.openni_data[msg.userID]["ros_msg"] = msg
             x_max = 0
             x_min = 1000
             y_max = 0
             y_min = 1000
             for j in msg.joints:
                 pose = j.pose.position
-                x2d = int(int(pose.x*fx/pose.z+cx))
-                y2d = int(int(pose.y*fy/pose.z+cy))
+                x2d = int(int( pose.x*self.fx/pose.z+self.cx ))
+                y2d = int(int( pose.y*self.fy/pose.z+self.cy ))
                 self.openni_data[msg.userID][j.name] = [x2d, y2d, pose.x, pose.y, pose.z]
                 if x2d < x_min:		x_min=x2d
                 if x2d > x_max:		x_max=x2d
@@ -175,72 +174,68 @@ class skeleton_cnn():
                 x_max = np.min([x_max+60,640])
                 y_max = np.min([y_max+60,480])
                 self.openni_data[msg.userID]["process_img"]   = self.image[y_min:y_max, x_min:x_max, :]
-                self.openni_data[msg.userID]["process_depth"] = self.depth[y_min:y_max, x_min:x_max]
+                self.openni_data[msg.userID]["process_depth"] = 1 #self.depth[y_min:y_max, x_min:x_max]
                 self.openni_data[msg.userID]["img_xy"]        = [x_min, x_max, y_min, y_max]
                 self.openni_ready = 1
-            for ID in self.openni_to_delete:
-                if self.openni_to_delete[ID]["msg"] in ["Out of Scene","Stopped tracking"]:
-                    self.openni_data.pop(ID, None)
-            #self.openni_to_delete = []
 
-    def _process_images(self, img, depth, img_xy, userID):
+    def _process_images(self, imgs, depths, img_xys, userIDs):
         self.processing = 1
         self.image_ready = 0
         self.depth_ready = 0
         self.openni_ready = 0
-
+        
         # main loop
         start = time.time()
-
-        self.img_small = cv2.resize(img, (256,256))#, fx=self.scale1, fy=self.scale2, interpolation=cv2.INTER_CUBIC)
-        self.teaser_batch[0] = np.divide(self.img_small,255.0)
+        for count,img in enumerate(imgs):
+            img_small = cv2.resize(img, (256,256)) #, fx=self.scale1, fy=self.scale2, interpolation=cv2.INTER_CUBIC)
+            self.teaser_batch[count] = np.divide(img_small, 255.0)
         output = self.sess.run(self.preds, feed_dict={self.X:self.teaser_batch})
-        a,conf = self.get_skeleton(output[0])
+       
+        for count,img in enumerate(imgs):
+            img_xy = img_xys[count]
+            userID = userIDs[count] 
+            #depth  = depths[count]
+            a,conf = self.get_skeleton(output[count])
+            X = map(int, a[0]*img.shape[1]/256.0)
+            Y = map(int, a[1]*img.shape[0]/256.0)
 
-        X = a[0]*img.shape[1]/256.0
-        Y = a[1]*img.shape[0]/256.0
-        X = map(int,X)
-        Y = map(int,Y)
+            # block 10
+            canvas = img.copy()
+            # check conf
+            C_val = np.sum(conf)/float(len(conf))
 
-        # block 10
-        canvas = img.copy()
-        # check conf
-        C_val = np.sum(conf)/float(len(conf))
-
-        if C_val >= self.conf_threshold:
-            canvas = np.multiply(canvas,0.2,casting="unsafe")
-            cur_canvas = img.copy() #np.zeros(canvas.shape,dtype=np.uint8)
-            for l,bone in enumerate(self.bone_con):
-                a = bone[0]
-                b = bone[1]
-                if conf[a] >= self.conf_threshold2 and conf[b] >= self.conf_threshold2:
-	            Yb = [X[a],X[b]]
-	            Xb = [Y[a],Y[b]]
-	            mX = np.mean(Xb)
-	            mY = np.mean(Yb)
-	            length = ((Xb[0] - Xb[1]) ** 2 + (Yb[0] - Yb[1]) ** 2) ** 0.5
-	            angle = math.degrees(math.atan2(Xb[0] - Xb[1], Yb[0] - Yb[1]))
-	            polygon = cv2.ellipse2Poly((int(mY),int(mX)), (int(length/2), self.stickwidth), int(angle), 0, 360, 1)
-	            cv2.fillConvexPoly(cur_canvas, polygon, self.colors[l])
-            canvas = np.add(canvas,np.multiply(cur_canvas,0.8,casting="unsafe"),casting="unsafe") # for transparency
-            #for x,y,c in zip(X,Y,conf):
-            #    if c >= self.conf_threshold:
-            #        cv2.circle(canvas,(x,y), 5, (0,0,255), -1)
-
-        canvas = canvas.astype(np.uint8)
-        x_min, x_max, y_min, y_max = img_xy
-        colourID = np.mod(userID, len(self.colors))
-        self.image.setflags(write=1)
-        self.image[y_min:y_max, x_min:x_max, :] = canvas
-        self.image.setflags(write=1)
-        self.image[y_min:y_min+2, x_min:x_max, :] = self.colors[colourID]
-        self.image.setflags(write=1)
-        self.image[y_max-2:y_max, x_min:x_max, :] = self.colors[colourID]
-        self.image.setflags(write=1)
-        self.image[y_min:y_max, x_min:x_min+2, :] = self.colors[colourID]
-        self.image.setflags(write=1)
-        self.image[y_min:y_max, x_max-2:x_max, :] = self.colors[colourID]
-        #print 'image processed in: %1.3f sec' % (time.time()-start)
+            if C_val >= self.conf_threshold:
+                self._get_openni_msg(X, Y, img_xy, userID)
+                canvas = np.multiply(canvas,0.2,casting="unsafe")
+                cur_canvas = img.copy() #np.zeros(canvas.shape,dtype=np.uint8)
+                for l,bone in enumerate(self.bone_con):
+                    a = bone[0]
+                    b = bone[1]
+                    if conf[a] >= self.conf_threshold2 and conf[b] >= self.conf_threshold2:
+      	                Yb = [X[a],X[b]]
+	                Xb = [Y[a],Y[b]]
+	                mX = np.mean(Xb)
+	                mY = np.mean(Yb)
+	                length = ((Xb[0] - Xb[1]) ** 2 + (Yb[0] - Yb[1]) ** 2) ** 0.5
+	                angle = math.degrees(math.atan2(Xb[0] - Xb[1], Yb[0] - Yb[1]))
+	                polygon = cv2.ellipse2Poly((int(mY),int(mX)), (int(length/2), self.stickwidth), int(angle), 0, 360, 1)
+	                cv2.fillConvexPoly(cur_canvas, polygon, self.colors[l])
+                canvas = np.add(canvas,np.multiply(cur_canvas,0.8,casting="unsafe"),casting="unsafe") # for transparency
+            
+            canvas = canvas.astype(np.uint8)
+            x_min, x_max, y_min, y_max = img_xy
+            colourID = np.mod(userID, len(self.colors))
+            self.image.setflags(write=1)
+            self.image[y_min:y_max, x_min:x_max, :] = canvas
+            self.image.setflags(write=1)
+            self.image[y_min:y_min+2, x_min:x_max, :] = self.colors[colourID]
+            self.image.setflags(write=1)
+            self.image[y_max-2:y_max, x_min:x_max, :] = self.colors[colourID]
+            self.image.setflags(write=1)
+            self.image[y_min:y_max, x_min:x_min+2, :] = self.colors[colourID]
+            self.image.setflags(write=1)
+            self.image[y_min:y_max, x_max-2:x_max, :] = self.colors[colourID]
+        print 'image processed in: %1.3f sec' % (time.time()-start)
         #util.showBGRimage(name+'_results',canvas,1)
 
     def _publish(self):
@@ -251,27 +246,59 @@ class skeleton_cnn():
             self.image_pub.publish(msg)
         self.processing = 0
 
-    def _get_depth_data(self, prediction, depthToTest, userID, img_xy, p):
-        [fx,fy,cx,cy] = self.camera_calib
+    def _get_openni_msg(self, X, Y, img_xy, userID):
+        #[fx,fy,cx,cy] = self.camera_calib
         x_min, x_max, y_min, y_max = img_xy
-        
-        # add the torso position
-        #x2d = np.min([int(self.y[p]),367])
-        #y2d = np.min([int(self.x[p]),490])     
-        #z = depthToTest[x2d, y2d]
-        #x = (y2d/self.scale-cx)*z/fx
-        #y = (x2d/self.scale-cy)*z/fy
-	# the rest of the body joints
-        for part,jname in enumerate(self.limbs_names):
-            x2d = np.min([int(prediction[part, 0, p]),367])
-            y2d = np.min([int(prediction[part, 1, p]),490])
-            z = depthToTest[x2d, y2d]
-            if not np.abs(z-self.openni_data[userID][jname][4])<self.depth_thresh:
-                z = self.openni_data[userID][jname][4]
-            x2d += y_min
-            y2d += x_min
-            x = (y2d/self.scale-cx)*z/fx
-            y = (x2d/self.scale-cy)*z/fy
+        #print X
+        #print Y
+        #print self.openni_data[userID]["ros_msg"]
+        msg = self.openni_data[userID]["ros_msg"]
+        for j,joint in enumerate(msg.joints):
+            #print j,joint.name
+            a = self.ni_names.index(joint.name)
+            #print self.ni_names[a],self.ni_names_map[a]
+            val = self.ni_names_map[a]
+            #x2d = X[val] + y_min
+            #y2d = Y[val] + x_min
+            #x2d = Y[val] + x_min
+            #y2d = X[val] + y_min
+
+            x = joint.pose.position.x
+            y = joint.pose.position.y
+            z = joint.pose.position.z
+            
+            #x_cnn = (y2d-self.cx)*z/self.fx
+            #y_cnn = (x2d-self.cy)*z/self.fy
+            #y_cnn =  (x2d-self.cx)*z/self.fx
+            #x_cnn = -(y2d-self.cy)*z/self.fy
+            x2d = X[val] + x_min
+            y2d = Y[val] + y_min
+
+            x_cnn = (x2d-self.cx)*z/self.fx
+            y_cnn = (y2d-self.cy)*z/self.fy
+
+
+            if joint.name == "head":
+                print '>>>',X[val],Y[val],x_min,y_min,x,y,z,self.cx,self.cy,self.fx,self.fy
+                print x_cnn,x
+                print y_cnn,y
+                print '-----'
+            joint.pose.position.x = x_cnn
+            joint.pose.position.y = y_cnn
+            msg.joints[j] = joint
+        msg.time = rospy.get_rostime()
+        self.skeleton_pub.publish(msg)        
+        # find the xyz data
+        #for part,jname in enumerate(self.limbs_names):
+            #x2d = np.min([int(prediction[part, 0, p]),367])
+            #y2d = np.min([int(prediction[part, 1, p]),490])
+            #z = depthToTest[x2d, y2d]
+            #if not np.abs(z-self.openni_data[userID][jname][4])<self.depth_thresh:
+            #    z = self.openni_data[userID][jname][4]
+            #x2d += y_min
+            #y2d += x_min
+            #x = (y2d/self.scale-self.cx)*z/self.fx
+            #y = (x2d/self.scale-self.cy)*z/self.fy
             #j = joint_message
             #j.name = jname
             #j.pose.position.x = x
