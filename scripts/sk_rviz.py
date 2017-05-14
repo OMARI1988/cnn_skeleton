@@ -28,6 +28,7 @@ class people():
         # self.menu_handler = MenuHandler()
         self.image_topic = "/head_xtion/rgb/image_raw"
         self.skeleton_topic = "/skeleton_data/incremental"
+        #self.skeleton_topic = "/skeleton_data/cnn"
 
         self.fx, self.fy, self.cx, self.cy = util.read_yaml_calib("")        
         self.person = {}
@@ -105,31 +106,32 @@ class people():
             data = {}
             for j in msg.joints:
                 pose = j.pose.position
-                x2d = int( pose.x*self.fx/pose.z+self.cx )
-                y2d = int( pose.y*self.fy/pose.z+self.cy )
+                x2d = int( pose.x*self.fy/pose.z+self.cy )
+                y2d = int( pose.y*self.fx/pose.z+self.cx )
                 data[j.name] = self._convert_to_world_frame(j.pose.position)
                 data[j.name].append(x2d)
                 data[j.name].append(y2d)
-            img = self._get_shirt_short(data)
-            up, lo = self._get_colours_mean()            
+            #print data["torso"]
+            #img = self._get_shirt_short(data)
+            #up, lo = self._get_colours_mean()            
             
             self.person[name]["lower"].scale = (data["head"][2]-.25)/2.0
             self.person[name]["lower"].pose.position.x = data["torso"][0]
             self.person[name]["lower"].pose.position.y = data["torso"][1]
             self.person[name]["lower"].pose.position.z = (data["head"][2]-.25)/4.0
             self.person[name]["lower"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
-            self.person[name]["lower"].controls[0].markers[0].color.r = lo[2]/255.0
-            self.person[name]["lower"].controls[0].markers[0].color.g = lo[1]/255.0
-            self.person[name]["lower"].controls[0].markers[0].color.b = lo[0]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.r = 0 #lo[2]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.g = 0 #lo[1]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.b = 0 #lo[0]/255.0
 
             self.person[name]["upper"].scale = (data["head"][2]-.25)/2.0
             self.person[name]["upper"].pose.position.x = data["torso"][0]
             self.person[name]["upper"].pose.position.y = data["torso"][1]
             self.person[name]["upper"].pose.position.z = 3*(data["head"][2]-.25)/4.0
             self.person[name]["upper"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
-            self.person[name]["upper"].controls[0].markers[0].color.r = up[2]/255.0
-            self.person[name]["upper"].controls[0].markers[0].color.g = up[1]/255.0
-            self.person[name]["upper"].controls[0].markers[0].color.b = up[0]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.r = 1 #up[2]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.g = 0 #up[1]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.b = 0 #up[0]/255.0
 
             self.person[name]["head"].pose.position.x = data["torso"][0]
             self.person[name]["head"].pose.position.y = data["torso"][1]
@@ -170,12 +172,12 @@ class people():
 
     def _get_shirt_short(self, data):
         img = self.image.copy()
-        img = self._remove_black(img,[1,1,1])
+        #img = self._remove_black(img,[1,1,1])
         mask_shirt = np.zeros((480,640), np.uint8)
         points = []
         for j in self.shirt_joints:
-            y = data[j][4]
-            x = data[j][3]
+            y = data[j][3]
+            x = data[j][4]
             points.append([x,y])
         poly = np.array(points, np.int32)
         cv2.fillConvexPoly(mask_shirt, poly, (255,255,255))
@@ -183,18 +185,20 @@ class people():
         self.shirt = self._remove_black(shirt,[0,0,0])
         # cv2.imshow("shirt", self.shirt)
 
+        img = self.image.copy()
         mask_short = np.zeros((480,640), np.uint8)
         points = []
         for j in self.short_joints:
-            x = data[j][4]
-            y = data[j][3]
+            x = data[j][3]
+            y = data[j][4]
             points.append([x,y])
+            cv2.circle(img,(x,y), 3, (0,0,255), -1)
+        #cv2.imshow("short", img)
         poly = np.array(points, np.int32)
         cv2.fillConvexPoly(mask_short, poly, (255,0,255))
         short = cv2.bitwise_and(img, img, mask=mask_short)
         self.short = self._remove_black(short,[0,0,0])
-        cv2.imshow("short", self.short)
-        cv2.waitKey(10)
+        cv2.waitKey(1)
         return img
 
     def _remove_black(self,img,val):

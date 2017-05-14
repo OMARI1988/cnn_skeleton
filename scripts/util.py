@@ -2,7 +2,7 @@ import rospy
 import numpy as np
 from cStringIO import StringIO
 import PIL.Image
-from IPython.display import Image, display
+#from IPython.display import Image, display
 import cv2
 import getpass
 import sys
