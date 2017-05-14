@@ -32,17 +32,18 @@ import skimage.io as io
 
 class skeleton_cnn():
     """docstring for cnn"""
-    def __init__(self, cam, im_topic, dp_topic, sk_topic, pub, save):
+    def __init__(self, cam, im_topic, dp_topic, sk_topic, pub, save, save_dir):
         
         # read camera calib
         self.camera_calib = util.read_yaml_calib(cam)
         self.fx, self.fy, self.cx, self.cy = self.camera_calib
 
         # save cpm images
-        # TO DO!
-        self.save_cpm_img = save
-        if self.save_cpm_img:
-            rospy.loginfo("save cpm images.") 
+        self.frame = 0
+        self.save_img = save
+        self.save_dir     = save_dir 
+        if self.save_img:
+            rospy.loginfo("save cpm images, at: "+ self.save_dir) 
 
         # get camera topic
         self.image_topic = rospy.resolve_name(im_topic)
@@ -244,6 +245,9 @@ class skeleton_cnn():
             msg = self.bridge.cv2_to_imgmsg(self.image, "rgb8")
             sys.stdout = sys.__stdout__
             self.image_pub.publish(msg)
+            if self.save_img:
+               cv2.imwrite(self.save_dir+str(self.frame)+".jpg", cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB))
+               self.frame+=1
         self.processing = 0
 
     def _get_openni_msg(self, X, Y, img_xy, userID):
@@ -258,19 +262,11 @@ class skeleton_cnn():
             a = self.ni_names.index(joint.name)
             #print self.ni_names[a],self.ni_names_map[a]
             val = self.ni_names_map[a]
-            #x2d = X[val] + y_min
-            #y2d = Y[val] + x_min
-            #x2d = Y[val] + x_min
-            #y2d = X[val] + y_min
 
             x = joint.pose.position.x
             y = joint.pose.position.y
             z = joint.pose.position.z
             
-            #x_cnn = (y2d-self.cx)*z/self.fx
-            #y_cnn = (x2d-self.cy)*z/self.fy
-            #y_cnn =  (x2d-self.cx)*z/self.fx
-            #x_cnn = -(y2d-self.cy)*z/self.fy
             x2d = X[val] + x_min
             y2d = Y[val] + y_min
 
@@ -278,11 +274,11 @@ class skeleton_cnn():
             y_cnn = (y2d-self.cy)*z/self.fy
 
 
-            if joint.name == "head":
-                print '>>>',X[val],Y[val],x_min,y_min,x,y,z,self.cx,self.cy,self.fx,self.fy
-                print x_cnn,x
-                print y_cnn,y
-                print '-----'
+            #if joint.name == "head":
+            #    print '>>>',X[val],Y[val],x_min,y_min,x,y,z,self.cx,self.cy,self.fx,self.fy
+            #    print x_cnn,x
+            #    print y_cnn,y
+            #    print '-----'
             joint.pose.position.x = x_cnn
             joint.pose.position.y = y_cnn
             msg.joints[j] = joint

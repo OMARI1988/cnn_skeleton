@@ -15,11 +15,12 @@ class live_cnn():
     def __init__(self):
         cam = rospy.get_param("~camera_calibration","")
         pub = rospy.get_param("~publish_images","True")
-        save = rospy.get_param("~save_images","")
+        save = rospy.get_param("~save_images","True")
         im_topic = rospy.get_param("~image","/head_xtion/rgb/image_raw")		# subscribed to image topic
         dp_topic = rospy.get_param("~depth","/head_xtion/depth_registered/sw_registered/image_rect")	# subscribed to depth topic
         sk_topic = rospy.get_param("~skeleton","/skeleton_data/incremental")		# subscribed to openni skeleton topic
-        self.sk_cnn = cnn_live_functions.skeleton_cnn(cam, im_topic, dp_topic, sk_topic, pub, save)
+        save_dir = rospy.get_param("~save_dir","/home/strands/mo_data/")
+        self.sk_cnn = cnn_live_functions.skeleton_cnn(cam, im_topic, dp_topic, sk_topic, pub, save, save_dir)
         counter = 0
         r = rospy.Rate(15) # 30hz
         while not rospy.is_shutdown():
