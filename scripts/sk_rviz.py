@@ -3,7 +3,7 @@
 import rospy
 import copy
 import numpy as np
-
+import util 
 from interactive_markers.interactive_marker_server import *
 from interactive_markers.menu_handler import *
 from visualization_msgs.msg import *
@@ -29,6 +29,7 @@ class people():
         self.image_topic = "/head_xtion/rgb/image_raw"
         self.skeleton_topic = "/skeleton_data/incremental"
 
+        self.fx, self.fy, self.cx, self.cy = util.read_yaml_calib("")        
         self.person = {}
         self.frame = 0
         self.counter = 0
@@ -44,6 +45,9 @@ class people():
         self.image_ready = 0
         self.robot_ready = 0
         self.ptu_ready   = 0
+        self.shirt_joints = ['torso', 'left_shoulder', 'right_shoulder']
+        self.short_joints = ['left_knee', 'torso', 'right_knee']
+
         #self.openni_data = {} # keeps track of openni_data
         #for user in range(20):
         #    self.openni_data[user] = {}
@@ -98,66 +102,107 @@ class people():
         msg.userID = np.mod(msg.userID, 20)
         name = str(msg.userID)
         if name in self.person:
+            data = {}
             for j in msg.joints:
-                if j.name == "head":
-                    head = j.pose.position
-                    head = self._convert_to_world_frame(head)
-                    #print "head", head
-                if j.name == "torso":
-                    torso = j.pose.position
-                    torso = self._convert_to_world_frame(torso)
-                    #print "torso", torso
-                if j.name == "right_hand":
-                    right_hand = j.pose.position
-                    right_hand = self._convert_to_world_frame(right_hand)
-                if j.name == "left_hand":
-                    left_hand = j.pose.position
-                    left_hand = self._convert_to_world_frame(left_hand)
+                pose = j.pose.position
+                x2d = int( pose.x*self.fx/pose.z+self.cx )
+                y2d = int( pose.y*self.fy/pose.z+self.cy )
+                data[j.name] = self._convert_to_world_frame(j.pose.position)
+                data[j.name].append(x2d)
+                data[j.name].append(y2d)
+            img = self._get_shirt_short(data)
+            up, lo = self._get_colours_mean()            
+            
+            self.person[name]["lower"].scale = (data["head"][2]-.25)/2.0
+            self.person[name]["lower"].pose.position.x = data["torso"][0]
+            self.person[name]["lower"].pose.position.y = data["torso"][1]
+            self.person[name]["lower"].pose.position.z = (data["head"][2]-.25)/4.0
+            self.person[name]["lower"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
+            self.person[name]["lower"].controls[0].markers[0].color.r = lo[2]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.g = lo[1]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.b = lo[0]/255.0
 
-            self.person[name]["lower"].scale = (head[2]-.25)/2.0
-            self.person[name]["lower"].pose.position.x = torso[0]
-            self.person[name]["lower"].pose.position.y = torso[1]
-            self.person[name]["lower"].pose.position.z = (head[2]-.25)/4.0
-            self.person[name]["lower"].controls[0].markers[0].scale.z = (head[2]-.25)/2.0
-            self.person[name]["lower"].controls[0].markers[0].color.r = 0.3 #self.colour["lower"][2]
-            self.person[name]["lower"].controls[0].markers[0].color.g = 0.3 #self.colour["lower"][1]
-            self.person[name]["lower"].controls[0].markers[0].color.b = 0.3 #self.colour["lower"][0]
+            self.person[name]["upper"].scale = (data["head"][2]-.25)/2.0
+            self.person[name]["upper"].pose.position.x = data["torso"][0]
+            self.person[name]["upper"].pose.position.y = data["torso"][1]
+            self.person[name]["upper"].pose.position.z = 3*(data["head"][2]-.25)/4.0
+            self.person[name]["upper"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
+            self.person[name]["upper"].controls[0].markers[0].color.r = up[2]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.g = up[1]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.b = up[0]/255.0
 
-            self.person[name]["upper"].scale = (head[2]-.25)/2.0
-            self.person[name]["upper"].pose.position.x = torso[0]
-            self.person[name]["upper"].pose.position.y = torso[1]
-            self.person[name]["upper"].pose.position.z = 3*(head[2]-.25)/4.0
-            self.person[name]["upper"].controls[0].markers[0].scale.z = (head[2]-.25)/2.0
-            self.person[name]["upper"].controls[0].markers[0].color.r = 1.0
-            self.person[name]["upper"].controls[0].markers[0].color.g = 0.1
-            self.person[name]["upper"].controls[0].markers[0].color.b = 0.1
-
-            self.person[name]["head"].pose.position.x = torso[0]
-            self.person[name]["head"].pose.position.y = torso[1]
-            self.person[name]["head"].pose.position.z = head[2]
+            self.person[name]["head"].pose.position.x = data["torso"][0]
+            self.person[name]["head"].pose.position.y = data["torso"][1]
+            self.person[name]["head"].pose.position.z = data["head"][2]
             # self.action.replace("\n",",")
             self.person[name]["head"].description = "" #self.action
 
-            self.person[name]["right_hand"].pose.position.x = right_hand[0]
-            self.person[name]["right_hand"].pose.position.y = right_hand[1]
-            self.person[name]["right_hand"].pose.position.z = right_hand[2]
+            self.person[name]["right_hand"].pose.position.x = data["right_hand"][0]
+            self.person[name]["right_hand"].pose.position.y = data["right_hand"][1]
+            self.person[name]["right_hand"].pose.position.z = data["right_hand"][2]
 
-            self.person[name]["left_hand"].pose.position.x = left_hand[0]
-            self.person[name]["left_hand"].pose.position.y = left_hand[1]
-            self.person[name]["left_hand"].pose.position.z = left_hand[2]
+            self.person[name]["left_hand"].pose.position.x = data["left_hand"][0]
+            self.person[name]["left_hand"].pose.position.y = data["left_hand"][1]
+            self.person[name]["left_hand"].pose.position.z = data["left_hand"][2]
 
             for part in self.person[name]:
                 self.server.insert(self.person[name][part], self.processFeedback)
         self.server.applyChanges()
 
-    def frameCallback(self, msg):
-        self.get_sk_info()
-        self._get_color_info()
-        self._get_action_info()
-        self._pub_image()
-        for name in self.person:
-            #UPDATE BODY
-            pass
+    def _get_colours_mean(self):
+        # finding shirt mean
+        B = self.shirt[:,:,0]!=0
+        G = self.shirt[:,:,1]!=0
+        R = self.shirt[:,:,2]!=0
+        B_mean = int(np.mean(self.shirt[R*B*G][:,0]))
+        G_mean = int(np.mean(self.shirt[R*B*G][:,1]))
+        R_mean = int(np.mean(self.shirt[R*B*G][:,2]))
+        shirt_mean = [B_mean,G_mean,R_mean]
+        # finding short mean
+        B = self.short[:,:,0]!=0
+        G = self.short[:,:,1]!=0
+        R = self.short[:,:,2]!=0
+        B_mean = int(np.mean(self.short[R*B*G][:,0]))
+        G_mean = int(np.mean(self.short[R*B*G][:,1]))
+        R_mean = int(np.mean(self.short[R*B*G][:,2]))
+        short_mean = [B_mean,G_mean,R_mean]
+        return shirt_mean, short_mean
+
+    def _get_shirt_short(self, data):
+        img = self.image.copy()
+        img = self._remove_black(img,[1,1,1])
+        mask_shirt = np.zeros((480,640), np.uint8)
+        points = []
+        for j in self.shirt_joints:
+            y = data[j][4]
+            x = data[j][3]
+            points.append([x,y])
+        poly = np.array(points, np.int32)
+        cv2.fillConvexPoly(mask_shirt, poly, (255,255,255))
+        shirt = cv2.bitwise_and(img, img, mask=mask_shirt)
+        self.shirt = self._remove_black(shirt,[0,0,0])
+        # cv2.imshow("shirt", self.shirt)
+
+        mask_short = np.zeros((480,640), np.uint8)
+        points = []
+        for j in self.short_joints:
+            x = data[j][4]
+            y = data[j][3]
+            points.append([x,y])
+        poly = np.array(points, np.int32)
+        cv2.fillConvexPoly(mask_short, poly, (255,0,255))
+        short = cv2.bitwise_and(img, img, mask=mask_short)
+        self.short = self._remove_black(short,[0,0,0])
+        cv2.imshow("short", self.short)
+        cv2.waitKey(10)
+        return img
+
+    def _remove_black(self,img,val):
+        B = img[:,:,0]==0
+        G = img[:,:,1]==0
+        R = img[:,:,2]==0
+        img[B*G*R] = val
+        return img
 
     def _convert_to_world_frame(self, xyz):
         """Convert a single camera frame coordinate into a map frame coordinate"""
@@ -196,107 +241,9 @@ class people():
 
         return [x_mf, y_mf, z_mf]
 
-    def _get_robot_msg(self):
-        f1 = open(self._rbt_files[self.frame],'r')
-        for count, line in enumerate(f1):
-            # read the x value
-            if count == 1:
-                a = float(line.split('\n')[0].split(':')[1])
-                self.robot['x'] = a
-            # read the y value
-            elif count == 2:
-                a = float(line.split('\n')[0].split(':')[1])
-                self.robot['y'] = a
-            # read the z value
-            elif count == 3:
-                a = float(line.split('\n')[0].split(':')[1])
-                self.robot['z'] = a
-            # read roll pitch yaw
-            elif count == 5:
-                ax = float(line.split('\n')[0].split(':')[1])
-            elif count == 6:
-                ay = float(line.split('\n')[0].split(':')[1])
-            elif count == 7:
-                az = float(line.split('\n')[0].split(':')[1])
-            elif count == 8:
-                aw = float(line.split('\n')[0].split(':')[1])
-                # ax,ay,az,aw
-                roll, pitch, yaw = euler_from_quaternion([ax, ay, az, aw])    #odom
-                pitch = 10*math.pi / 180.   #we pointed the pan tilt 10 degrees
-                self.robot['rol'] = roll
-                self.robot['pit'] = pitch
-                self.robot['yaw'] = yaw
-
-    def get_sk_info(self):
-        self._get_robot_msg()
-        f1 = open(self._skl_files[self.frame],'r')
-        joints = {}
-        for count, line in enumerate(f1):
-            if count == 0:
-                t = np.float64(line.split(':')[1].split('\n')[0])
-            # read the joint name
-            elif (count-1)%10 == 0:
-                j = line.split('\n')[0]
-                joints[j] = []
-            # read the x value
-            elif (count-1)%10 == 2:
-                a = float(line.split('\n')[0].split(':')[1])
-                joints[j].append(a)
-            # read the y value
-            elif (count-1)%10 == 3:
-                a = float(line.split('\n')[0].split(':')[1])
-                joints[j].append(a)
-            # read the z value
-            elif (count-1)%10 == 4:
-                a = float(line.split('\n')[0].split(':')[1])
-                joints[j].append(a)
-                self.data[j] = self._convert_to_world_frame(joints[j])
-
-
-    # def get_openni_values(self):
-    #     robot = self._get_robot_msg()
-    #     f1 = open(self._skl_files[self.frame],'r')
-    #     self.data = {}
-    #     for count, line in enumerate(f1):
-    #         if count == 0: continue
-    #         line = line.split(',')
-    #         joint_name = line[0]
-    #         self.data[joint_name] = {}
-    #         x2d = float(line[1])
-    #         y2d = float(line[2])
-    #         x = float(line[3])
-    #         y = float(line[4])
-    #         z = float(line[5])
-    #         # self._convert_to_world_frame([x,y,z],[rx,ry,rz])
-    #         self.data[joint_name] = [x,y,z]
-    #     self.frame+=1
-    #     if self.frame == len(self._skl_files):
-    #         self.frame=0
-
     def processFeedback( self, feedback ):
-        s = "Feedback from marker '" + feedback.marker_name
-        s += "' / control '" + feedback.control_name + "'"
-
-        mp = ""
-        if feedback.mouse_point_valid:
-            mp = " at " + str(feedback.mouse_point.x)
-            mp += ", " + str(feedback.mouse_point.y)
-            mp += ", " + str(feedback.mouse_point.z)
-            mp += " in frame " + feedback.header.frame_id
-
-        if feedback.event_type == InteractiveMarkerFeedback.BUTTON_CLICK:
-            rospy.loginfo( s + ": button click" + mp + "." )
-        elif feedback.event_type == InteractiveMarkerFeedback.MENU_SELECT:
-            rospy.loginfo( s + ": menu item " + str(feedback.menu_entry_id) + " clicked" + mp + "." )
-        elif feedback.event_type == InteractiveMarkerFeedback.POSE_UPDATE:
-            rospy.loginfo( s + ": pose changed")
-
-        elif feedback.event_type == InteractiveMarkerFeedback.MOUSE_DOWN:
-            rospy.loginfo( s + ": mouse down" + mp + "." )
-        elif feedback.event_type == InteractiveMarkerFeedback.MOUSE_UP:
-            rospy.loginfo( s + ": mouse up" + mp + "." )
-        server.applyChanges()
-
+        pass
+        
     def makeCyl( self, msg, rgb ):
         marker = Marker()
         marker.type = Marker.CYLINDER
