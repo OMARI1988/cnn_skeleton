@@ -88,7 +88,7 @@ class skeleton_cnn():
         self.saver = tf.train.Saver()
         self.teaser_batch = np.zeros([8, 256, 256,3], dtype = np.float32)
         self.img_small = np.zeros((256,256,3),dtype=np.uint8)
-        self.conf_threshold = 0.5		# threshold for cnn detection
+        self.conf_threshold = 0.3		# threshold for cnn detection
         self.conf_threshold2 = 0.1
         self._initiliase_cnn()
         self.processing = 0
@@ -97,6 +97,10 @@ class skeleton_cnn():
         self.openni_ready = 0
         self.openni_data = {}		# keeps track of openni_data
         self.openni_to_delete = {}
+        for user in range(20):
+            self.openni_to_delete[user] = {}
+            self.openni_to_delete[user]["msg"] = "Out of Scene"
+            self.openni_to_delete[user]["cnt"] = 0
 
         # subscribe to camera topic
         rospy.Subscriber(self.image_topic, Image, self._get_rgb)
@@ -142,14 +146,12 @@ class skeleton_cnn():
             self.depth_ready = 1
 
     def _get_openni_state(self,msg):
-        #print msg
-        self.openni_to_delete[msg.userID] = msg.message
+        self.openni_to_delete[msg.userID]["msg"] = msg.message
+        self.openni_to_delete[msg.userID]["cnt"] = 0
         print msg.userID,msg.message
-        #if msg.message in ["Out of Scene","Stopped tracking"]:
-        #    print 'yay'
-        #    self.openni_to_delete.append(msg.userID)
 
     def _get_openni(self,msg):
+        self.openni_to_delete[msg.userID]["cnt"] = 0
         if not self.processing:
             [fx,fy,cx,cy] = self.camera_calib
             self.openni_data[msg.userID] = {}
@@ -177,7 +179,7 @@ class skeleton_cnn():
                 self.openni_data[msg.userID]["img_xy"]        = [x_min, x_max, y_min, y_max]
                 self.openni_ready = 1
             for ID in self.openni_to_delete:
-                if self.openni_to_delete[ID] in ["Out of Scene","Stopped tracking"]:
+                if self.openni_to_delete[ID]["msg"] in ["Out of Scene","Stopped tracking"]:
                     self.openni_data.pop(ID, None)
             #self.openni_to_delete = []
 
@@ -227,16 +229,17 @@ class skeleton_cnn():
 
         canvas = canvas.astype(np.uint8)
         x_min, x_max, y_min, y_max = img_xy
+        colourID = np.mod(userID, len(self.colors))
         self.image.setflags(write=1)
         self.image[y_min:y_max, x_min:x_max, :] = canvas
         self.image.setflags(write=1)
-        self.image[y_min:y_min+2, x_min:x_max, :] = self.colors[userID]
+        self.image[y_min:y_min+2, x_min:x_max, :] = self.colors[colourID]
         self.image.setflags(write=1)
-        self.image[y_max-2:y_max, x_min:x_max, :] = self.colors[userID]
+        self.image[y_max-2:y_max, x_min:x_max, :] = self.colors[colourID]
         self.image.setflags(write=1)
-        self.image[y_min:y_max, x_min:x_min+2, :] = self.colors[userID]
+        self.image[y_min:y_max, x_min:x_min+2, :] = self.colors[colourID]
         self.image.setflags(write=1)
-        self.image[y_min:y_max, x_max-2:x_max, :] = self.colors[userID]
+        self.image[y_min:y_max, x_max-2:x_max, :] = self.colors[colourID]
         #print 'image processed in: %1.3f sec' % (time.time()-start)
         #util.showBGRimage(name+'_results',canvas,1)
 

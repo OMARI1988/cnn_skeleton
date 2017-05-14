@@ -28,7 +28,10 @@ class live_cnn():
                 users = self.sk_cnn.openni_to_delete.keys()
                 for userID in users:
                     if userID in self.sk_cnn.openni_to_delete and userID in self.sk_cnn.openni_data:
-                        if self.sk_cnn.openni_to_delete[userID] not in ["Out of Scene","Stopped tracking"]:
+                        self.sk_cnn.openni_to_delete[userID]["cnt"] += 1
+                        if self.sk_cnn.openni_to_delete[userID]["cnt"] == 30:			# no update to this ID for two seconds
+                            self.sk_cnn.openni_to_delete[userID]["msg"] = "Stopped tracking"
+                        if self.sk_cnn.openni_to_delete[userID]["msg"] not in ["Out of Scene","Stopped tracking"]:
                             if "img_xy" in self.sk_cnn.openni_data[userID].keys():
                                 img    = self.sk_cnn.openni_data[userID]["process_img"]
                                 depth  = self.sk_cnn.openni_data[userID]["process_depth"]
