@@ -120,18 +120,18 @@ class people():
             self.person[name]["lower"].pose.position.y = data["torso"][1]
             self.person[name]["lower"].pose.position.z = (data["head"][2]-.25)/4.0
             self.person[name]["lower"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
-            self.person[name]["lower"].controls[0].markers[0].color.r = 0 #lo[2]/255.0
-            self.person[name]["lower"].controls[0].markers[0].color.g = 0 #lo[1]/255.0
-            self.person[name]["lower"].controls[0].markers[0].color.b = 0 #lo[0]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.r = 0.2 #lo[2]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.g = 0.2 #lo[1]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.b = 0.2 #lo[0]/255.0
 
             self.person[name]["upper"].scale = (data["head"][2]-.25)/2.0
             self.person[name]["upper"].pose.position.x = data["torso"][0]
             self.person[name]["upper"].pose.position.y = data["torso"][1]
             self.person[name]["upper"].pose.position.z = 3*(data["head"][2]-.25)/4.0
             self.person[name]["upper"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
-            self.person[name]["upper"].controls[0].markers[0].color.r = 1 #up[2]/255.0
-            self.person[name]["upper"].controls[0].markers[0].color.g = 0 #up[1]/255.0
-            self.person[name]["upper"].controls[0].markers[0].color.b = 0 #up[0]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.r = .5 #up[2]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.g = .5 #up[1]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.b = 1 #up[0]/255.0
 
             self.person[name]["head"].pose.position.x = data["torso"][0]
             self.person[name]["head"].pose.position.y = data["torso"][1]
@@ -388,9 +388,9 @@ class people():
         self.server.applyChanges()	
 
 if __name__=="__main__":
-    rospy.init_node("basic_controls")
+    rospy.init_node("rviz_skeleton")
     P = people()
-    P.server = InteractiveMarkerServer("basic_controls")
+    P.server = InteractiveMarkerServer("people_skeleton")
     #rospy.Timer(rospy.Duration(0.02), P.frameCallback)
 
     position = [-3, 3, 1.8]
