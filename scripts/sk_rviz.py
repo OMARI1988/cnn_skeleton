@@ -106,8 +106,9 @@ class people():
             data = {}
             for j in msg.joints:
                 pose = j.pose.position
-                x2d = int( pose.x*self.fy/pose.z+self.cy )
-                y2d = int( pose.y*self.fx/pose.z+self.cx )
+                x2d = int( pose.x*self.fx/pose.z+self.cx ) #int( pose.x*self.fy/pose.z+self.cy )
+                y2d = int( pose.y*self.fy/pose.z+self.cy ) #int( pose.y*self.fx/pose.z+self.cx )
+
                 data[j.name] = self._convert_to_world_frame(j.pose.position)
                 data[j.name].append(x2d)
                 data[j.name].append(y2d)
@@ -120,17 +121,17 @@ class people():
             self.person[name]["lower"].pose.position.y = data["torso"][1]
             self.person[name]["lower"].pose.position.z = (data["head"][2]-.25)/4.0
             self.person[name]["lower"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
-            self.person[name]["lower"].controls[0].markers[0].color.r = 0.2 #lo[2]/255.0
-            self.person[name]["lower"].controls[0].markers[0].color.g = 0.2 #lo[1]/255.0
-            self.person[name]["lower"].controls[0].markers[0].color.b = 0.2 #lo[0]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.r = .3 #lo[2]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.g = .3 #lo[1]/255.0
+            self.person[name]["lower"].controls[0].markers[0].color.b = .6 #lo[0]/255.0
 
             self.person[name]["upper"].scale = (data["head"][2]-.25)/2.0
             self.person[name]["upper"].pose.position.x = data["torso"][0]
             self.person[name]["upper"].pose.position.y = data["torso"][1]
             self.person[name]["upper"].pose.position.z = 3*(data["head"][2]-.25)/4.0
             self.person[name]["upper"].controls[0].markers[0].scale.z = (data["head"][2]-.25)/2.0
-            self.person[name]["upper"].controls[0].markers[0].color.r = .5 #up[2]/255.0
-            self.person[name]["upper"].controls[0].markers[0].color.g = .5 #up[1]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.r = .4 #up[2]/255.0
+            self.person[name]["upper"].controls[0].markers[0].color.g = .4 #up[1]/255.0
             self.person[name]["upper"].controls[0].markers[0].color.b = 1 #up[0]/255.0
 
             self.person[name]["head"].pose.position.x = data["torso"][0]
@@ -183,7 +184,7 @@ class people():
         cv2.fillConvexPoly(mask_shirt, poly, (255,255,255))
         shirt = cv2.bitwise_and(img, img, mask=mask_shirt)
         self.shirt = self._remove_black(shirt,[0,0,0])
-        # cv2.imshow("shirt", self.shirt)
+        #cv2.imshow("shirt", self.shirt)
 
         img = self.image.copy()
         mask_short = np.zeros((480,640), np.uint8)
@@ -195,10 +196,10 @@ class people():
             cv2.circle(img,(x,y), 3, (0,0,255), -1)
         #cv2.imshow("short", img)
         poly = np.array(points, np.int32)
-        cv2.fillConvexPoly(mask_short, poly, (255,0,255))
+        cv2.fillConvexPoly(mask_short, poly, (255,255,255))
         short = cv2.bitwise_and(img, img, mask=mask_short)
         self.short = self._remove_black(short,[0,0,0])
-        cv2.waitKey(1)
+        #cv2.waitKey(1)
         return img
 
     def _remove_black(self,img,val):
